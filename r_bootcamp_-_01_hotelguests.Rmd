@@ -1,0 +1,541 @@
+---
+title: "R-Bootcamp Assignment"
+author: "Nico Wyss, Sothy Yogarajah"
+date: "Document created on `r format(Sys.Date(), '%d.%m.%Y')`"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '2'
+  pdf_document:
+    number_sections: yes
+    toc: yes
+    toc_depth: 2
+class: FS 2020, 2. Semester @HSLU
+---
+
+
+# Intro Problem and Approach & Findings
+
+## What?
+In this paper we investigated whether there is a correlation between changes in the foreign currency pairs USD/CHF and EUR/CHF and overnight stays in Swiss hotels. 
+
+## How?
+For this purpose, we combined the data of the study on overnight stays from the Swiss Federal Statistical Office with the respective final exchange rates of the currency pairs. The hypothesis would be that with increasing purchasing power due to foreign currencies (weakened Swiss franc) people abroad are more likely to spend their vacations in Switzerland.
+
+This works strongly relies on the Data Science Worklflow, following the recommendation of Hadley Wickham.
+
+[![Data Science Workflow](https://d33wubrfki0l68.cloudfront.net/571b056757d68e6df81a3e3853f54d3c76ad6efc/32d37/diagrams/data-science.png)](https://r4ds.had.co.nz/introduction.html)
+**Fig. 1:** Data Science Workflow
+
+## Findings
+We have found that there is no correlation between the change in overnight stays measured and the change in currency pairs. Even if we extend the difference between the observation periods to 12 months, we do not see any significant correlation. A review of this finding with autoarima (not included in the document for space reasons) confirms this finding.
+
+
+---
+
+## Start options
+
+
+Package       | Description
+--- | -------------
+**Tidyverse**     | The tidyverse is an opinionated collection of R packages designed for data science. All packages share an underlying design philosophy, grammar, and data structures.
+**Tidymodels**    | The tidymodels framework is a collection of packages for modeling and machine learning using tidyverse principles.
+**janitor**       | This function is powered by the underlying exported function make_clean_names(), which accepts and returns a character vector of names. This allows for cleaning the names (head of columns) of any object. 
+**corrr**         | A tool for exploring correlations. It makes it possible to easily perform routine tasks when exploring correlation matrices such as ignoring the diagonal, focusing on the correlations of certain variables against others, or rearranging and visualizing the matrix in terms of the strength of the correlations.
+**skimr**         | A simple to use summary function that can be used with pipes and displays nicely in the console. The default summary statistics may be modified by the user as can the default formatting. Support for data frames and vectors is included, and users can implement their own skim methods for specific object types as described in a vignette. Default summaries include support for inline spark graphs.
+**ggthemes**      | Some extra themes, geoms, and scales for 'ggplot2'. Provides 'ggplot2' themes and scales that replicate the look of plots by Edward Tufte, Stephen Few, 'Fivethirtyeight', 'Tableau', 'The Economist', 'Stata', 'Excel', and 'The Wall Street Journal', among others. Provides 'geoms' for Tufte's box plot and range frame.
+**plotly**        | Plotly is an easy to use packages to transform static ggplots into dynamic charts. This makes it more enjoyable to discover findings and insight from our data.
+**pacman**        | As a package Manager, 'pacman' improves installing and loading process, especially if the environement hasn't been run on the client before. Furthermore, it updates the used packages. 
+
+```{r Start Opt, include=TRUE}
+# clear workspace and variables
+rm(list = ls(all.names = TRUE))
+# garbage collector
+gc()
+
+# scientic penalty
+options(scipen = 999)
+# number of aftercomma digits
+options(digits = 4)
+
+# condition to check and install packetmanager pacman and load it
+if ("pacman" %in% rownames(installed.packages()) == TRUE) {
+  library(pacman)
+} else {
+  install.packages("pacman")
+  library(pacman)
+}
+
+p_load(tidyverse, tidymodels, janitor, here)
+p_load(readxl)
+p_load(skimr)
+p_load(ggthemes, viridis, plotly, knitr, ggridges)
+
+```
+
+# Data Science Workflow
+## Import Data
+
+Read in all raw data files and adapt column names to the naming convention.
+
+```{r}
+
+# hotels Datensatz
+var_file_hotel = here("01_input", "data_01_hotels_angebot.xlsx")
+
+df_01_hotels <- 
+  here("01_input", "data_01_hotels_angebot.xlsx") %>% 
+  excel_sheets() %>% 
+  set_names() %>% 
+  map_df(read_excel, path = var_file_hotel, .id = "JAHR") %>% 
+  clean_names()
+
+rm(var_file_hotel)
+
+# anzahl logiernächte
+df_02_ln_ch <- 
+  read_xlsx(here("01_input", "data_02_logiernächte_ch.xlsx")) %>% 
+  clean_names()
+
+# anzahl gäste
+df_03_ln_gaste <- 
+  read_xlsx(here("01_input", "data_03_logiernächte_herkunft.xlsx")) %>% 
+  clean_names()
+
+# forexrates
+df_04_eur_chf <- 
+  read_xlsx(here("01_input","data_04_eur-chf.xlsx")) %>% 
+  rename("EUR" = rate)
+
+df_04_usd_chf <- 
+  read_xlsx(here("01_input","data_04_usd-chf.xlsx")) %>% 
+    rename("USD" = rate)
+
+
+```
+
+## Tidy Data
+Tidying your data means storing it in a consistent form that matches the semantics of the dataset with the way it is stored. Each column is a variable, and each row is an observation. Tidy data is important because the consistent structure lets us focus on our struggle on questions about the data.
+
+```{r}
+
+# fremdwährungsdatensätze tidy
+df_currencies <- 
+  df_04_eur_chf %>% 
+  inner_join(df_04_usd_chf) %>% 
+  mutate(year_mon = zoo::as.yearmon(date) %>% format("%Y-%m")) %>% 
+  select(year_mon, EUR, USD)
+
+rm(df_04_eur_chf, df_04_usd_chf)
+
+
+# lookuptabelle um key values zu ersetzen für logiernächte monatsbasis
+df_lookup_month_ausland <- tribble(
+  ~ key, ~ month,
+  "januar_gaste_aus_dem_ausland",    01,
+  "februar_gaste_aus_dem_ausland",   02,
+  "marz_gaste_aus_dem_ausland",      03,
+  "april_gaste_aus_dem_ausland",     04,
+  "mai_gaste_aus_dem_ausland",       05,
+  "juni_gaste_aus_dem_ausland",      06,
+  "juli_gaste_aus_dem_ausland",      07,
+  "august_gaste_aus_dem_ausland",    08,
+  "september_gaste_aus_dem_ausland", 09,
+  "oktober_gaste_aus_dem_ausland",   10,
+  "november_gaste_aus_dem_ausland",  11,
+  "dezember_gaste_aus_dem_ausland",  12)
+
+df_lookup_month_inland <- tribble(
+  ~ key, ~ month,
+  "januar_gaste_aus_dem_inland",    01,
+  "februar_gaste_aus_dem_inland",   02,
+  "marz_gaste_aus_dem_inland",      03,
+  "april_gaste_aus_dem_inland",     04,
+  "mai_gaste_aus_dem_inland",       05,
+  "juni_gaste_aus_dem_inland",      06,
+  "juli_gaste_aus_dem_inland",      07,
+  "august_gaste_aus_dem_inland",    08,
+  "september_gaste_aus_dem_inland", 09,
+  "oktober_gaste_aus_dem_inland",   10,
+  "november_gaste_aus_dem_inland",  11,
+  "dezember_gaste_aus_dem_inland",  12)
+
+
+df_ln_ausland_yearmon <-
+  df_02_ln_ch %>% 
+  select(jahre, contains("ausland")) %>% 
+  pivot_longer(cols = contains("ausland"),
+               names_to = "key",
+               values_to = "anzahl_gaeste_ausland") %>% 
+  left_join(df_lookup_month_ausland) %>% 
+  mutate(year_mon = paste0(jahre, "-",month) %>% zoo::as.yearmon() %>% format("%Y-%m")) %>% 
+  select(year_mon, anzahl_gaeste_ausland)
+
+df_ln_inland_yearmon <-
+  df_02_ln_ch %>% 
+  select(jahre, contains("inland")) %>% 
+  pivot_longer(cols = contains("inland"),
+               names_to = "key",
+               values_to = "anzahl_gaeste_inland") %>% 
+  left_join(df_lookup_month_inland) %>% 
+  mutate(year_mon = paste0(jahre, "-",month) %>% zoo::as.yearmon() %>% format("%Y-%m")) %>% 
+  select(year_mon, anzahl_gaeste_inland)
+
+df_ln_yearmon <- inner_join(df_ln_ausland_yearmon, df_ln_inland_yearmon, by = "year_mon")
+  
+rm(df_lookup_month_ausland, df_lookup_month_inland, df_ln_inland_yearmon, df_ln_ausland_yearmon)
+
+# gathered df for visualization
+df_ln_month <- df_02_ln_ch %>% 
+  gather(key = herkunft, 
+         value = naechte, 
+         - jahre)
+rm(df_02_ln_ch)
+
+
+# Distribution among EU non EU
+df_ln_ausland_year <-
+  df_03_ln_gaste %>%
+  mutate_if(is.numeric, replace_na, 0) %>% 
+  mutate(europa = (belgien + deutschland + frankreich + 
+                  vereinigtes_konigreich_und_irland + italien + niederlande),
+         usa    = vereinigte_staaten_usa,
+         rest   = ubriges_ausland,
+         total  = (ubriges_ausland+ vereinigte_staaten_usa + belgien + deutschland + frankreich + 
+                  vereinigtes_konigreich_und_irland + italien + niederlande + schweizer),
+         total_ausland = (total - schweizer)
+         ) %>% 
+  select(jahr, schweizer, europa, usa, rest, total, total_ausland)
+
+rm(df_03_ln_gaste)  
+
+
+# hotel
+df_hotel <-
+  df_01_hotels %>% 
+  select(year = jahr,
+         kanton,
+         total_bett_pro_tag,
+         total_zimmer_year_average,
+         total_bett_year_average)
+
+rm(df_01_hotels)
+
+
+```
+
+## Transform Data
+
+Transformation includes narrowing in on observations of interest, creating new variables (like the lagged periods or the gathered data frame for better visualizations) that are functions of existing variables, and calculating a set of summary statistics (like counts or means).
+
+# feature engineering
+
+```{r}
+# add diff column to compare difference
+df_currencies <- 
+  df_currencies %>%
+  arrange(year_mon) %>% 
+  mutate(diff_USD = USD - lag(USD),
+         diff_EUR = EUR - lag(EUR),
+         diff_USD12 = USD - lag(USD, n = 12),
+         diff_EUR12 = EUR - lag(EUR, n = 12)) %>% 
+  drop_na()
+
+df_ln_yearmon <-
+  df_ln_yearmon %>% 
+  arrange(year_mon) %>% 
+  mutate(diff_gaeste_ausland = anzahl_gaeste_ausland - lag(anzahl_gaeste_ausland)) %>% 
+  mutate(diff_gaeste_inland = anzahl_gaeste_inland - lag(anzahl_gaeste_inland)) %>% 
+  mutate(diff_gaeste_ausland_12 = anzahl_gaeste_ausland - lag(anzahl_gaeste_ausland, n = 12)) %>% 
+  mutate(diff_gaeste_inland_12 = anzahl_gaeste_inland - lag(anzahl_gaeste_inland, n = 12)) %>% 
+  drop_na()
+
+df_01_forex <- 
+  df_currencies %>% 
+  inner_join(df_ln_yearmon) %>% 
+  drop_na()
+
+rm(df_currencies)
+
+```
+## EDA
+With the following chapter, we inspect the data through EDA
+As the correlation plots cleary indicate: there is unfortunately no correlation in our data sets.
+A further machine learning approach doesn't make sense after this point but we still continue.
+
+- both scatter plots indicate no correlation, the the difference in hotel guests differs the most around no zero variance EUR/CHF respectively USD/CHF
+- the correlations are shown in several different ways but show all the same findings
+- used packages are corr and corrplot
+- the significant correlations can be ignored, since these are variables which correlate with its features
+
+```{r echo=TRUE}
+df_01_forex %>% 
+  ggplot(aes(x = diff_USD, y = diff_gaeste_ausland)) +
+  geom_point()
+
+df_01_forex %>% 
+  ggplot(aes(x = diff_EUR, y = diff_gaeste_ausland)) +
+  geom_point()
+
+cor(df_01_forex$diff_USD, df_01_forex$diff_gaeste_ausland)
+df_01_forex %>% select_if(is.numeric) %>% cor() %>% round(digits = 2)
+
+cor(df_01_forex$diff_EUR, df_01_forex$diff_gaeste_ausland)
+df_01_forex %>% select_if(is.numeric) %>% cor() %>% round(digits = 2)
+
+
+p_load(corrplot)
+
+corrplot((df_01_forex %>% select_if(is.numeric) %>% cor() %>% round(digits = 2)), method = "number", type = "upper")
+
+#https://www.statsandr.com/blog/correlogram-in-r-how-to-highlight-the-most-correlated-variables-in-a-dataset/
+#devtools::install_github("laresbernardo/lares")
+p_load(lares)
+
+corr_cross(df_01_forex, # name of dataset
+   #max_pvalue = 0.0005, # display only significant correlations (at 5% level)
+  top = 10 # display top 10 couples of variables (by correlation coefficient)
+)
+
+
+corr_var(df_01_forex, # name of dataset
+  diff_gaeste_ausland, # name of variable to focus on
+  top = 5 # display top 5 correlations
+) 
+
+skim(df_01_forex)
+
+```
+
+## Visualize
+
+With the following chapter, we inspect the data through visualization. Visualization is a fundamentally human activity. A good visualization will show things that we did not expect, or raise new questions about the data. A good visualization might also hint that you’re asking the wrong question, or you need to collect different data. Visualizations can surprise, but don’t scale particularly well because they require a human to interpret them.
+
+### Availability of night / hotel bed
+```{r}
+
+# available hotel bed nights (1 bed for 1 night) sorted and proportional
+df_hotel %>% 
+  filter(kanton != "Schweiz") %>% 
+  group_by(year, kanton) %>% 
+  summarise(n = sum(total_bett_year_average)) %>% 
+  group_by(year) %>% 
+  mutate(percentage = n / sum(n)*100) %>% 
+  ggplot(aes(
+    x = year,
+    y = percentage,
+    group = reorder(kanton, -percentage),
+    fill = reorder(kanton, -percentage)
+  )) + 
+    geom_area(  alpha = 0.6,
+                size = 0.5,
+                colour="black",
+                linetype = 1,
+                size =2) +
+  labs(title = "Development of distribution of all availabe nights (1 bed, 1 night) in swiss hotels") +
+  theme(axis.text.x = element_text(angle = 90))
+
+# available hotel bed nights (1 bed for 1 night) alphabetically and absolut
+df_hotel %>% 
+  filter(kanton != "Schweiz") %>% 
+  group_by(year, kanton) %>% 
+  summarise(n = sum(total_bett_year_average))%>% 
+  group_by(year) %>% 
+  ggplot(aes(
+    x = year,
+    y = n,
+    group = kanton,
+    fill = kanton,
+  )) +
+  geom_area(alpha = 0.6,
+            size = 0.5,
+            colour="black") +
+  ylab("no of availabe nights (bed/day) in average per year") +
+  xlab(" ") +
+  theme(plot.title = "Percentage of all availabe hotelbeds in switzerland") +
+  theme_few() +
+  theme(axis.text.x = element_text(angle = 90))
+  
+
+
+```
+Graubünden, Berne, Valais and Zurich together make up 50% of the accommodation available each year. We also see that the number has increased even more in recent years for the cantons with many beds. 
+
+### Hotelguests over the year per month and origin
+There is no data available from "Bundesamt für Statistik" for the year 2004.
+This drop as well as the continuous growth is clearly visible in the following chart.
+```{r}
+# line chart total over years
+df_ln_ausland_year %>% 
+  gather(key = herkunft, value = naechte, -jahr) %>%
+  ggplot(aes(
+    x = jahr,
+    y = naechte, 
+    color = herkunft,
+    group = herkunft
+  )) +
+  geom_line() +
+  ylab("nights") +
+  xlab(" ") +
+  scale_color_discrete(name = " ")
+  
+```
+
+#### Monthly peaks of guests over the years
+
+In the following chapter we will answer the question in which month the most tourist visit Switzerland respectively swiss inhabitants spend their holidays in local hotels.
+- august and july seem to be the most attracitve months to visit switzerland
+- swiss take their somerbreak most often in july
+- februar and march (skiing season) shows clearly trends of more visitors from abroad over time
+
+```{r}
+
+
+# monthly distribution of foreign guests (linechart)
+df_ln_month %>% 
+  filter(str_detect(herkunft, "ausland")) %>% 
+  ggplot() +
+  geom_line(aes(
+    x = jahre,
+    y = naechte,
+    group = reorder(herkunft, -naechte),
+    color = reorder(herkunft, -naechte)
+  )) +
+  scale_color_discrete(name = "months") +
+  ylab("nights by guest non ch monthly") +
+  xlab(" ") +
+  theme_few()
+  
+
+# monthly distribution of ch guests (boxplot) 
+df_ln_month %>% 
+  filter(str_detect(herkunft, "inland")) %>% 
+  ggplot() +
+  geom_line(aes(
+    x = jahre,
+    y = naechte,
+    group = reorder(herkunft, -naechte),
+    color = reorder(herkunft, -naechte)
+  )) +
+  scale_color_discrete(name = "months") +
+  ylab("nights by guest ch monthly") +
+  xlab(" ") +
+  theme_few()
+
+# monthly distribution of foreign guests (linechart)
+
+df_ln_month %>% 
+  filter(str_detect(herkunft, "total")) %>% 
+  ggplot() +
+  geom_line(aes(
+    x = jahre,
+    y = naechte,
+    group = reorder(herkunft, -naechte),
+    color = reorder(herkunft, -naechte)
+  )) +
+  scale_color_discrete(name = "months") +
+  ylab("nights by guest non ch monthly") +
+  xlab(" ") +
+  theme_few()
+  
+
+         
+```
+
+#### How are the peaks from visitors distributed per month?
+The following example show how the distribution of a multi dimensional data frame can be examined.
+Beside the normal "boxplot" method, ridge charts show how the monthly guests are distributed over the years (not chronologically).
+```{r}
+# monthly ridge chart distribution from CH guests
+df_ln_month %>% 
+  filter(str_detect(herkunft, 'inland')) %>%
+  ggplot(aes(x = naechte, 
+             y = reorder(herkunft, -naechte), 
+             fill = herkunft)) +
+  geom_density_ridges() +
+  theme_ridges() + 
+  theme(legend.position = "none") +
+  ggtitle("Distribution per month from CH guests") +
+  ylab('months orderd by nights')
+
+# monthly ridge chart distribution from CH guests
+df_ln_month %>%
+  filter(str_detect(herkunft, 'ausland')) %>%
+  ggplot(aes(x = naechte,
+             y = reorder(herkunft, -naechte),
+             fill = herkunft)) +
+  geom_density_ridges() +
+  theme_ridges() +
+  theme(legend.position = "none") +
+  ggtitle("Distribution per month from EU and US guests") +
+  ylab('months orderd by nights')
+# monthly distribution of foreign guests (boxplot)
+
+df_ln_month %>% 
+  filter(str_detect(herkunft, "ausland")) %>% 
+  ggplot() +
+  geom_boxplot(aes(
+    x = herkunft,
+    y = naechte,
+    group = reorder(herkunft, -naechte)
+  )) +
+  theme(axis.text.x = element_text(angle = 90))
+
+# monthly distribution of ch guests (boxplot) 
+df_ln_month %>% 
+  filter(str_detect(herkunft, "inland")) %>% 
+  ggplot() +
+  geom_boxplot(aes(
+    x = herkunft,
+    y = naechte,
+    group = reorder(herkunft, -naechte)
+  )) +
+  theme(axis.text.x = element_text(angle = 90))
+
+```
+#### Currency charts
+
+```{r}
+#Function to show every n-th element of discrete axis
+every_nth = function(n) {
+  return(function(x) {x[c(TRUE, rep(FALSE, n - 1))]})
+}
+
+# line chart of USD/CHF and EUR/CHF exchange rates
+df_01_forex %>% 
+  select(EUR, USD, year_mon) %>% 
+  gather( key = currency,
+          value = rate,
+          - year_mon) %>% 
+  ggplot() +
+  geom_line(aes(
+    x = year_mon, 
+    y = rate,
+    group = currency,
+    color = currency
+  )) + 
+  scale_x_discrete(breaks = every_nth(n = 24)) +
+  theme_few() +
+  ylab("exchange rate") +
+  xlab(" ")
+  
+```
+
+## Model
+Models are complementary tools to visualisation. Once we have made our questions sufficiently precise, you can use a model to answer them. Models are a fundamentally mathematical or computational tool, so they generally scale well. But every model makes assumptions, and by its very nature a model cannot question its own assumptions. That means a model cannot fundamentally surprise you.
+
+```{r}
+#lm model for 1 month lag diff (EUR)
+lm01 <- lm(anzahl_gaeste_ausland ~ diff_gaeste_ausland + diff_EUR, data = df_01_forex)
+summary(lm01)
+#lm model for 12 month lag diff (EUR)
+lm02 <- lm(anzahl_gaeste_ausland ~ diff_gaeste_ausland_12 + diff_EUR12, data = df_01_forex)
+summary(lm02)
+
+anova(lm01, lm02)
+ 
+```
+
+# further information
+Please see second file for application examples of "shiny"

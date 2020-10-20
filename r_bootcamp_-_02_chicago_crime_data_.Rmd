@@ -1,0 +1,293 @@
+---
+title: "R-Bootcamp: Assessment (2/2)"
+subtitle: "Chicago Crime Data"
+author: "Nico Wyss, Sothy Yogarajah"
+class: "HSFS 2020, 3.Semester @HSLU"
+date: "Document created on `r format(Sys.Date(), '%d.%m.%Y')`"
+runtime: shiny
+output: 
+  html_notebook: 
+    theme: cerulean
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Initial Situation
+
+Since we did not have enough variables in the first data set, we decided to create two documents:
+
+- r_bootcamp_-_01_hotelguests
+
+- r_bootcamp_-_02_chicago_crime_data
+
+--------------------------------------------------------------------------------
+We have decided to use the Crimes-Dataset from the City of Chicago. First of all because this dataset ist publicly available, is updated daily and dates back to 2001 and secondly we want to take the oppurtunity to work with modern databases and r. 
+
+# About the Dataset
+The content of the Chicago-Crimes-Dataset is best described on Kaggle as following:
+
+*"This dataset reflects reported incidents of crime (with the exception of murders where data exists for each victim) that occurred in the City of Chicago from 2001 to present, minus the most recent seven days. Data is extracted from the Chicago Police Department's CLEAR (Citizen Law Enforcement Analysis and Reporting) system. In order to protect the privacy of crime victims, addresses are shown at the block level only and specific locations are not identified. This data includes unverified reports supplied to the Police Department."* ^[https://www.kaggle.com/chicago/chicago-crime]
+
+
+# Dataset Source: 
+[Google Cloud Bigquery Public Datasets](https://bigquery.cloud.google.com/dataset/bigquery-public-data:chicago_crime)^[https://bigquery.cloud.google.com/dataset/bigquery-public-data:chicago_crime]
+
+
+# Note to BigQuery
+In order to use BigQuery, one needs to have a Google Cloud account and enable billing for a project. But querying public data is usally free of costs.
+
+# Our Approach
+- Fetch Data from BigQuery-DB
+- Store Data in a SQLite-DB for further Analysis to keep data local and to save querying from BigQuery
+- Analyse Data and create some dynamic plots with Shiny
+
+# Start Setup Options
+
+```{r start_options, echo=TRUE}
+# clear workspace and variables
+rm(list = ls(all.names = TRUE))
+# garbage collector
+gc()
+
+# scientic penalty
+options(scipen = 999)
+# number of aftercomma digits
+options(digits = 4)
+
+# condition to check and install packetmanager pacman and load it
+if ("pacman" %in% rownames(installed.packages()) == TRUE) {
+  library(pacman)
+} else {
+  install.packages("pacman")
+  library(pacman)
+}
+
+# load needed libraries
+p_load(tidyverse, tidymodels, lubridate, janitor, here)
+p_load(bigrquery, DBI, RSQLite)
+p_load(leaflet, shiny, ggthemes)
+p_load(sf, sp) # sudo apt install -y libudunits2-0 libudunits2-dev
+# sudo apt-get install libudunits2-dev libgdal-dev libgeos-dev libproj-dev
+
+```
+
+# Get data from BiqQuery 
+
+For we only have to fetch the data once and data is stored locally for futher analysis, the following codeblock will noch run automatically and has been disabled.
+
+We have also decided to subset the data for only 2020 to keep the size of the dataset low.
+
+**!code will not run!**
+```{r bigquery, eval=FALSE, include=TRUE}
+# connection cursor for bigquery (without a billing-id from google gcp-platform, one cannot query the data, even if it is publicly available and free)
+con_bigquery <- dbConnect(
+  bigrquery::bigquery(),
+  project = "bigquery-public-data",
+  dataset = "chicago_crime",
+  billing = "!!!SECRET!!!"
+)
+
+# show tables 
+con_bigquery %>% dbListTables()
+
+# show table-fields
+bq_table_fields("bigquery-public-data.chicago_crime.crime")
+
+# link table to datasource, makes working with dplyr more comfortable
+db_crime <- con_bigquery %>% tbl("crime")
+
+# fetch data from db and store it in a dataframe
+df_crime <- db_crime %>% 
+  filter(year == 2020) %>% # filtering only 2020-Data
+  collect()
+
+# disconnect cursor
+con_bigquery %>% dbDisconnect()
+
+# remove obsolete data
+rm(con_sqlite, db_crime)
+```
+# Store data in SQLite-DB
+
+For we only have to fetch the data once and data is stored locally for futher analysis, the following codeblock will noch run automatically and has been disabled.
+
+We have also decided to subset the data for only 2020 to keep the size of the dataset low.
+
+**!code will not run!**
+```{r sqlite-write, eval=FALSE, include=TRUE}
+# connection cursor for sqlite-db
+con_sqlite <- dbConnect(
+  drv    = SQLite(),
+  dbname = here("01_input", "db_chicago_crime_data.sqlite"))
+
+# show tables
+con_sqlite %>% dbListTables()
+
+# write downloaded data from bigquery to sqlite
+con_sqlite %>%
+  dbWriteTable("t_chicago_crime", df_crime, overwrite = TRUE, append = FALSE)
+
+con_sqlite %>% dbDisconnect()
+
+rm(con_sqlite, df_crime)
+```
+
+# Import data from locally stored SQLite-Database
+
+```{r sqlite-read, include=FALSE}
+con_sqlite <- dbConnect(
+  drv    = SQLite(),
+  dbname = here("01_input", "db_chicago_crime_data.sqlite"))
+
+# show tables
+con_sqlite %>% dbListTables()
+
+# link table
+db_crime <- con_sqlite %>% tbl("t_chicago_crime")
+
+# create dataframe with only necessary variables
+df_data <-
+  db_crime %>%
+  select(date, primary_type,
+         description, location_description,
+         arrest, domestic, year,
+         latitude, longitude, community_area) %>%
+  collect() %>% 
+  mutate(date_hr = as_datetime(date)) %>% # convert unix epoch to humanreadable timestamp
+  select(date_hr, everything(), -date)
+
+# disconnect cursor
+con_sqlite %>% dbDisconnect()
+
+# remove obsolete data
+rm(con_sqlite, db_crime)
+```
+
+## first shiny interactive plot (barplot)
+
+In this interactive barplot, we can select the primary_type of the crime and get the sum of all the selected crimes displayed in a barplot.
+
+Of course, the plot can be extended, but in order not to go beyond the scope of the requirements of this course, we will leave it here.
+
+
+```{r shiny-plot, echo=FALSE}
+# create list with type of crime for selectbox
+var_level <- 
+  df_data %>% 
+  distinct(primary_type) %>% 
+  arrange(primary_type) %>% 
+  pull()
+
+# define inputpanel with selectbox
+inputPanel(
+  selectInput(inputId = "crime",
+              label = "Select Crime:",
+              choices = var_level)
+  
+# sliderInput(inputId = "month",
+#             label = "Month:",
+#             min = 01,
+#             max = 12,
+#             value = c(1, 12),
+#             sep = "",
+#             ticks = FALSE)
+
+)
+
+# renderplotfunction with assigned input/output variables for shiny
+renderPlot({
+  df_data %>% 
+    filter(primary_type == input$crime) %>% 
+    ggplot(aes(x = primary_type, y = ..count..)) + 
+    geom_bar() +
+    geom_label(stat='count', aes(label=..count..)) +
+    theme_wsj()
+})
+
+```
+
+## second shiny interactive plot (choropleth map)
+
+On the following shiny element, we are creating a choropleth map with the number of arrests per community area.
+
+```{r}
+# create dataset with aggregated arrest per community area
+df_arrests <-
+  df_data %>% 
+  group_by(primary_type, community_area) %>% 
+  summarise(arrest = sum(arrest)) %>% 
+  ungroup()
+
+# read shapefile of chicago
+df_chicago <- 
+  here("01_input", "chicago_geodata", "geo_export_df690088-8e91-4e0c-ac15-b67fbb9dc16a.shp") %>% 
+  st_read() %>% 
+  mutate(community = str_to_title(community), # convert community names to title case
+         community_area = as.integer(area_numbe)) %>% 
+  select(community, community_area)
+
+# create dataframe with prepared data for leaflet 
+df_leaflet <-
+  df_chicago %>% 
+  left_join(df_arrests) %>% 
+  drop_na() %>% 
+  st_transform("+proj=longlat +datum=WGS84")
+
+
+# create bins with the arrests
+ls_bins <- c(0, 10, 50, 100, 200, 400, 500, Inf)
+
+# colorcode bins (is compatible with RColorbrewer & Viridis)
+fun_pal <- colorBin(palette = "viridis",
+                    reverse = TRUE,
+                    domain = df_arrests$arrest,
+                    bins = ls_bins)
+
+# create shiny plot  
+df_leaflet %>% 
+leaflet() %>% 
+  setView(lng = -87.618994, lat = 41.875619, zoom = 10) %>% 
+   addProviderTiles("Stamen.Watercolor") %>% 
+  # addProviderTiles("Stamen.TonerHybrid") %>% 
+  # addProviderTiles("Stamen.Toner") %>% 
+  # addProviderTiles("CartoDB.Positron") %>% 
+  addPolygons(label = ~community,
+              fillColor = ~fun_pal(arrest),
+              color = "black",
+              weight = 0.5,
+              smoothFactor = 0.5,
+              opacity = 0.5,
+              fillOpacity = 0.5,
+              highlightOptions = highlightOptions(color = "white",
+                                                  weight = 2,
+                                                  bringToFront = TRUE)) %>% 
+  addLegend(pal = fun_pal,
+            values = ~arrest,
+            opacity = 0.7,
+            title = "Number of Arrests",
+            position = "bottomright")
+
+
+```
+
+### Source for Chigago shapefiles: 
+[https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Community-Areas-current-/cauq-8yn6](https://data.cityofchicago.org/Facilities-Geographic-Boundaries/Boundaries-Community-Areas-current-/cauq-8yn6)
+
+### Complete list of map providers for leaflet:
+[https://leaflet-extras.github.io/leaflet-providers/preview](https://leaflet-extras.github.io/leaflet-providers/preview)
+
+
+
+# Conclusion
+
+- We were able to fetch data from a modern bigdata database like bigquery
+- We were able to store and retriebe data from a local database
+- We were able to create a dynamic RMarkdown-Report with interactive plot with shiny
+
+# Session Info
+```{r}
+sessionInfo()
+```
