@@ -6,7 +6,8 @@ Using data from the Federal Statistical Office (overnight stays) and publicly av
 Eventough a high correlation was suspected, the data showed that there is none.
 With a lag of 6 to 12 months, the p value did not improve. (autocorr was used and showed no suitable TS model)
 
-## Key Take outs
+## Key take outs & learning
+- R Studio
 - Tidyverse (perparing data)
 - intesive GG Plot usage (data visualization)
 - correlation with multiple features
@@ -47,8 +48,16 @@ rm(df_lookup_month_ausland, df_lookup_month_inland, df_ln_inland_yearmon, df_ln_
 ```
 
 ## Thesis
+![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/7.png)
 
 ## Vizualisations
+
+![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/1.png)
+![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/2.png)
+![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/3.png)
+![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/4.png)
+![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/5.png)
+![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/6.png)
 
 
 
