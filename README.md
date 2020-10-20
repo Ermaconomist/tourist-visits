@@ -11,7 +11,7 @@ With a lag of 6 to 12 months, the p value did not improve. (autocorr was used an
 - intesive GG Plot usage (data visualization)
 - correlation with multiple features
 
-## Structure of Folders
+**Structure of Folders**
 Folder: parent directory
 r_bootcamp_-_01_hotelguests.Rmd               RMarkdown-file as Assignment
 r_bootcamp_-_01_hotelguests.nb.html           HTML Output from hotelguests Markdown
@@ -26,11 +26,11 @@ https://www.bfs.admin.ch/bfs/de/home/statistiken/kataloge-datenbanken/daten.html
 
 data_04_eur-chf.xlsx and data_04_usd-chf.xlsx were created with help and queries from https://www.onvista.de/devisen/Euro-Schweizer-Franken-EUR-CHF
 
-## EDA
+## Prep
 
 Tidying with the tidyverse package:
 
-```python
+```R
 df_ln_inland_yearmon <-
   df_02_ln_ch %>% 
   select(jahre, contains("inland")) %>% 
@@ -45,3 +45,10 @@ df_ln_yearmon <- inner_join(df_ln_ausland_yearmon, df_ln_inland_yearmon, by = "y
   
 rm(df_lookup_month_ausland, df_lookup_month_inland, df_ln_inland_yearmon, df_ln_ausland_yearmon)
 ```
+
+## Thesis
+
+## Vizualisations
+
+
+
