@@ -48,14 +48,16 @@ rm(df_lookup_month_ausland, df_lookup_month_inland, df_ln_inland_yearmon, df_ln_
 ```
 
 ## Thesis
+There is no connection except the features and their lagged abbreviations. 
 ![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/7.png)
+![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/2.png)
 
 ## Vizualisations
-
-![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/1.png)
-![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/2.png)
+A nice stacked and filled bar chart to show the distribution of the hotel capacities in Switzerland per canton.
 ![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/3.png)
+After overnight stays by non-Swiss citizens, which month is the most attractive for a visit to Switzerland? 
 ![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/4.png)
+The following visualization shows the distribution ot these visitors.
 ![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/5.png)
 ![img1](https://github.com/Ermaconomist/tourist-visits/blob/main/02_img/6.png)
 
