@@ -1,5 +1,5 @@
 
-# Tourist and the impact of exchange rates
+# Tourists and the impact of exchange rates
 Is there a correlation between tourists in Switzerland and direct purchasing power between EUR/CHF and USD/CHF? 
 Using data from the Federal Statistical Office (overnight stays) and publicly available exchange rates, I have set myself the goal of first visually processing this question and then statistically 
 
